@@ -263,7 +263,7 @@ async def process_html_images(html_content: str, access_token: str = None, ctx: 
 
 @mcp.tool()
 async def save_article(
-    ctx: Context = Field(..., description="上下文对象"),
+    ctx: Context,
     title: str = Field(..., description="文章标题"),
     content: str = Field(..., description="文章内容，必须使用HTML代码（只包括body里面的内容，样式必须使用行内样式，目的是为了富文本渲染），支持内容中的图片网络URL，内容中的图片网络URL会自动转换为微信图片URL"),
     thumb_image_url: str = Field("", description="封面图片URL，网络图片地址，选填"),
