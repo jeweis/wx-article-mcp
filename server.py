@@ -265,7 +265,7 @@ async def process_html_images(html_content: str, access_token: str = None, ctx: 
 async def save_article(
     ctx: Context = Field(..., description="上下文对象"),
     title: str = Field(..., description="文章标题"),
-    content: str = Field(..., description="文章内容，支持HTML，内容中的图片网络URL会自动转换为微信图片URL"),
+    content: str = Field(..., description="文章内容，必须使用HTML代码（只包括body里面的内容，样式必须使用行内样式，目的是为了富文本渲染），支持内容中的图片网络URL，内容中的图片网络URL会自动转换为微信图片URL"),
     thumb_image_url: str = Field("", description="封面图片URL，网络图片地址，选填"),
     author: str = Field("", description="作者"),
     digest: str = Field("", description="文章摘要"),
@@ -273,7 +273,7 @@ async def save_article(
     need_open_comment: int = Field(1, description="是否打开评论，0不打开，1打开。")
 ) -> str:
     """
-    保存微信公众号文章到草稿（包含图片上传、创建草稿）
+    保存微信公众号文章到草稿
     
     Args:
         title: 文章标题
@@ -307,7 +307,7 @@ async def save_article(
         await ctx.info(f"处理封面图片: {thumb_image_url}")
         ## thumb_image_url为空时，不调用image_to_media_id
         thumb_media_id=None
-        if thumb_image_url:
+        if thumb_image_url and thumb_image_url.strip():
             image_result = await image_to_media_id(thumb_image_url, access_token, ctx)
             thumb_media_id = image_result["media_id"]
             thumb_url = image_result.get("url")
@@ -330,7 +330,7 @@ async def save_article(
                     "need_open_comment": need_open_comment,
                     "only_fans_can_comment": only_fans_can_comment
                 }
-        if thumb_media_id:  # 只有当有封面图片时才添加到文章数据中
+        if thumb_media_id and thumb_media_id.strip():  # 只有当有封面图片时才添加到文章数据中
             article["thumb_media_id"] = thumb_media_id
         draft_data = {
             "articles": [
