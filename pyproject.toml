@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wx-article-mcp"
+version = "0.1.2"
+authors = [
+    {name = "Jewei", email = "jiweifong@qq.com"}
+]
+description = "微信公众号MCP服务器，提供微信公众号文章发布功能"
+readme = "README.md"
+requires-python = ">=3.10"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "fastmcp>=0.1.0",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "pydantic>=2.5.0",
+    "uvicorn>=0.24.0",
+    "beautifulsoup4>=4.12.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/jeweis/wx-article-mcp"
+"Bug Tracker" = "https://github.com/jeweis/wx-article-mcp/issues"
+
+[project.scripts]
+wx-article-mcp = "server:main"
+
+[tool.setuptools]
+py-modules = ["server"]
