@@ -86,6 +86,38 @@ python -m server.py
 
 ## 功能
 
-### 测试
+### 微信公众号文章管理
+- 保存微信公众号文章到公众号草稿
+- 支持富文本内容处理
+- 自动处理图片上传和媒体资源管理
 
-测试
+### Markdown 支持
+- 完整的 Markdown 语法支持
+- 代码高亮显示
+- **Mermaid 图表支持**：支持在 Markdown 中使用 Mermaid 语法创建各种图表
+  - 流程图 (Flowchart)
+  - 序列图 (Sequence Diagram)
+  - 甘特图 (Gantt Chart)
+  - 类图 (Class Diagram)
+  - 状态图 (State Diagram)
+  - 饼图 (Pie Chart)
+  - 等等...
+
+#### Mermaid 图表使用示例
+
+在 Markdown 中使用 Mermaid 图表非常简单，只需要使用 `mermaid` 代码块：
+
+````markdown
+```mermaid
+graph TD
+    A[开始] --> B{是否登录?}
+    B -->|是| C[显示主页]
+    B -->|否| D[跳转登录页]
+    D --> E[用户登录]
+    E --> C
+    C --> F[结束]
+```
+````
+
+上述代码将生成一个流程图，系统会自动将 Mermaid 图表渲染为图片并上传到微信公众号，确保在文章中正常显示。
+
