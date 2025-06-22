@@ -95,7 +95,7 @@ async def image_to_media_id(url: str, access_token: str | None, ctx: Context | N
     将图片转换为微信公众号素材ID(media_id)
     
     Args:
-        url: 图片URL地址
+        url: 图片URL地址或本地文件路径
         access_token: 可选的access_token，如果不提供则自动获取
         ctx: 可选的上下文对象，用于输出日志
         
@@ -114,11 +114,26 @@ async def image_to_media_id(url: str, access_token: str | None, ctx: Context | N
     log_info and log_info(f"开始处理图片: {url}")
     
     try:
-        # 下载图片
-        log_info and log_info("正在下载图片...")
-        image_response = requests.get(url, stream=True)
-        if image_response.status_code != 200:
-            raise Exception(f"下载图片失败，状态码: {image_response.status_code}")
+        # 判断是网络URL还是本地文件路径
+        if url.startswith(('http://', 'https://')):
+            # 网络URL，下载图片
+            log_info and log_info("正在下载网络图片...")
+            image_response = requests.get(url, stream=True)
+            if image_response.status_code != 200:
+                raise Exception(f"下载图片失败，状态码: {image_response.status_code}")
+            image_content = image_response.content
+            # 从URL推断文件名
+            filename = url.split('/')[-1] if '/' in url else 'image.jpg'
+            if '.' not in filename:
+                filename = 'image.jpg'
+        else:
+            # 本地文件路径
+            log_info and log_info("正在读取本地图片...")
+            if not os.path.exists(url):
+                raise Exception(f"本地图片文件不存在: {url}")
+            with open(url, 'rb') as f:
+                image_content = f.read()
+            filename = os.path.basename(url)
         
         # 获取access_token
         if not access_token:
@@ -129,7 +144,14 @@ async def image_to_media_id(url: str, access_token: str | None, ctx: Context | N
         log_info and log_info("上传图片到微信服务器...")
         upload_url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={access_token}&type=image"
         
-        files = {'media': ('image.jpg', image_response.content, 'image/jpeg')}
+        # 根据文件扩展名确定MIME类型
+        mime_type = 'image/jpeg'
+        if filename.lower().endswith('.png'):
+            mime_type = 'image/png'
+        elif filename.lower().endswith('.gif'):
+            mime_type = 'image/gif'
+        
+        files = {'media': (filename, image_content, mime_type)}
         upload_response = requests.post(upload_url, files=files)
         result = upload_response.json()
         
@@ -305,13 +327,18 @@ async def save_article(
         
         # 先上传封面图片获取media_id
         await ctx.info(f"处理封面图片: {thumb_image_url}")
-        ## thumb_image_url为空时，不调用image_to_media_id
-        thumb_media_id=None
-        if thumb_image_url and thumb_image_url.strip():
+        ## 如果thumb_image_url为空，使用默认图片
+        if not thumb_image_url or not thumb_image_url.strip():
+            # 使用默认图片
+            default_image_path = os.path.join(os.path.dirname(__file__), "img", "jewei-cat.jpg")
+            await ctx.info(f"使用默认封面图片: {default_image_path}")
+            image_result = await image_to_media_id(default_image_path, access_token, ctx)
+        else:
             image_result = await image_to_media_id(thumb_image_url, access_token, ctx)
-            thumb_media_id = image_result["media_id"]
-            thumb_url = image_result.get("url")
-            await ctx.info(f"封面图片处理成功，media_id: {thumb_media_id}, url: {thumb_url}")
+        
+        thumb_media_id = image_result["media_id"]
+        thumb_url = image_result.get("url")
+        await ctx.info(f"封面图片处理成功，media_id: {thumb_media_id}, url: {thumb_url}")
         
         # 处理文章内容中的图片URL
         await ctx.info("处理文章内容中的图片URL...")
@@ -330,8 +357,8 @@ async def save_article(
                     "need_open_comment": need_open_comment,
                     "only_fans_can_comment": only_fans_can_comment
                 }
-        if thumb_media_id and thumb_media_id.strip():  # 只有当有封面图片时才添加到文章数据中
-            article["thumb_media_id"] = thumb_media_id
+        # 现在总是有封面图片（要么是用户提供的，要么是默认图片）
+        article["thumb_media_id"] = thumb_media_id
         draft_data = {
             "articles": [
                 article
