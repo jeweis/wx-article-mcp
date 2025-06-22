@@ -11,13 +11,88 @@ import os
 import json
 import time
 import requests
+import markdown
 from typing import Optional, Dict, Any, List
 from fastmcp import FastMCP, Context
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+import asyncio
+import concurrent.futures
+from mermaid_cli import render_mermaid
 
 # 加载环境变量
 load_dotenv()
+
+# Mermaid图表渲染函数
+async def _async_render_mermaid(mermaid_code: str):
+    """异步渲染Mermaid图表为PNG图片并上传到微信"""
+    import hashlib
+    import os
+    
+    # 生成基于内容的文件名
+    content_hash = hashlib.md5(mermaid_code.encode()).hexdigest()[:8]
+    img_filename = f"mermaid_{content_hash}.png"
+    img_path = os.path.join("img", img_filename)
+    
+    # 确保img目录存在
+    os.makedirs("img", exist_ok=True)
+    
+    # 渲染Mermaid图表为PNG
+    title, desc, png_data = await render_mermaid(
+        mermaid_code,
+        output_format="png",
+        background_color="white",
+        mermaid_config={"theme": "default"}
+    )
+    
+    # 保存PNG文件到本地
+    with open(img_path, 'wb') as f:
+        f.write(png_data)
+    
+    # 上传图片到微信并获取media_id
+    try:
+        result = await image_to_media_id(img_path, None, None)
+        wx_image_url = result.get("url", "")
+        
+        # 删除本地临时文件
+        if os.path.exists(img_path):
+            os.remove(img_path)
+            
+        return wx_image_url
+    except Exception as e:
+        print(f"上传微信图片失败: {e}")
+        # 如果上传失败，返回本地路径
+        return img_path
+
+def render_mermaid_to_image(mermaid_code: str) -> str:
+    """
+    将Mermaid代码渲染为PNG图片并上传到微信
+    
+    Args:
+        mermaid_code: Mermaid图表代码
+        
+    Returns:
+        微信图片的HTML标签
+    """
+    try:
+        # 使用线程池执行器来避免事件循环冲突
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future = executor.submit(
+                lambda: asyncio.run(_async_render_mermaid(mermaid_code))
+            )
+            wx_image_url = future.result(timeout=30)  # 30秒超时
+            
+            # 如果获取到微信图片URL，返回微信图片HTML标签
+            if wx_image_url and wx_image_url.startswith('http'):
+                return f'<img src="{wx_image_url}" alt="Mermaid图表" style="max-width: 100%; height: auto;">'
+            else:
+                # 如果是本地路径，返回相对路径
+                return f'<img src="/{wx_image_url}" alt="Mermaid图表" style="max-width: 100%; height: auto;">'
+            
+    except Exception as e:
+        print(f"Mermaid渲染错误: {e}")
+        # 如果渲染失败，返回原始代码块
+        return f'<pre><code class="language-mermaid">{mermaid_code}</code></pre>'
 
 # 微信公众号配置
 WXMP_APPID = os.getenv("WXMP_APPID")
@@ -287,7 +362,7 @@ async def process_html_images(html_content: str, access_token: str = None, ctx: 
 async def save_article(
     ctx: Context,
     title: str = Field(..., description="文章标题"),
-    content: str = Field(..., description="文章内容，必须使用HTML代码（只包括body里面的内容，样式必须使用行内样式，目的是为了富文本渲染），支持内容中的图片网络URL，内容中的图片网络URL会自动转换为微信图片URL"),
+    content: str = Field(..., description="文章内容，使用Markdown格式编写，支持内容中的图片网络URL，内容中的图片网络URL会自动转换为微信图片URL"),
     thumb_image_url: str = Field("", description="封面图片URL，网络图片地址，选填"),
     author: str = Field("", description="作者"),
     digest: str = Field("", description="文章摘要"),
@@ -340,9 +415,50 @@ async def save_article(
         thumb_url = image_result.get("url")
         await ctx.info(f"封面图片处理成功，media_id: {thumb_media_id}, url: {thumb_url}")
         
+        # 将Markdown内容转换为HTML
+        await ctx.info("将Markdown内容转换为HTML...")
+        
+        # 使用标准的markdown扩展，不添加自定义样式（移除extra和toc避免生成a标签，extra包含footnotes会生成链接）
+        md_extensions = [
+            'codehilite',  # 代码高亮
+            'fenced_code',  # 围栏代码块
+            'tables',  # 表格支持
+            'nl2br',  # 换行转换
+            'attr_list',  # 属性列表支持
+            'def_list',  # 定义列表支持
+            'pymdownx.superfences'  # 支持Mermaid图表
+        ]
+        
+        # 配置代码高亮和Mermaid支持
+        extension_configs = {
+            'codehilite': {
+                'use_pygments': True,
+                'noclasses': True,  # 使用内联样式
+                'css_class': 'highlight'
+            },
+            'pymdownx.superfences': {
+                'custom_fences': [
+                    {
+                        'name': 'mermaid',
+                        'class': 'mermaid',
+                        'format': lambda source, language, css_class, options, md, **kwargs: render_mermaid_to_image(source)
+                    }
+                ]
+            }
+        }
+        
+        # 直接转换markdown为HTML，不添加额外样式
+        html_content = markdown.markdown(
+            content, 
+            extensions=md_extensions,
+            extension_configs=extension_configs
+        )
+        
+        await ctx.info("Markdown转换为HTML完成，使用原生样式")
+        
         # 处理文章内容中的图片URL
         await ctx.info("处理文章内容中的图片URL...")
-        processed_content = await process_html_images(content, access_token, ctx)
+        processed_content = await process_html_images(html_content, access_token, ctx)
         await ctx.info("文章内容中的图片URL处理完成")
         
         # 创建草稿
@@ -364,6 +480,9 @@ async def save_article(
                 article
             ]
         }
+
+        ## 打印draft_data字符串
+        print(json.dumps(draft_data, ensure_ascii=False))
         
         draft_response = requests.post(draft_url, data=bytes(json.dumps(draft_data, ensure_ascii=False), encoding='utf-8'))
         await ctx.info(f"draft_response: {draft_response}  draft_data:{draft_data}")
